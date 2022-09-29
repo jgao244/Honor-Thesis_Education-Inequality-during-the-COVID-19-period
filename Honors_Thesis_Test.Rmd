@@ -1,0 +1,344 @@
+---
+title: "Data"
+output: pdf_document
+---
+
+```{r}
+library(plyr)
+library(readr)
+library(tidyverse)
+library(naniar)
+library(class)
+library(C50)
+library(gmodels)
+library(party)
+library(rpart)
+library(rpart.plot)
+library(grf)
+library(caret)
+library(randomForest)
+library(sparklyr)
+library(rsample)      # data splitting 
+library(randomForest) # basic implementation
+library(ranger)       # a faster implementation of randomForest
+library(h2o)   
+library(mlr)
+library(tidymodels)
+library(remotes)
+library(rattle)
+library(vip)
+library(AmesHousing)
+library(kknn)
+library(partykit)
+
+
+```
+
+## Import data from week 13-week 29
+
+```{r eval=FALSE, include=FALSE}
+setwd("/Users/jiayigao/Desktop")
+mydir = "dataset"
+myfiles = list.files(path=mydir, pattern="*.csv", full.names=TRUE)
+House_Pulse_Survey = ldply(myfiles, read_csv)
+```
+## Data cleaning
+```{r eval=FALSE, include=FALSE}
+# create a new dataset
+
+new_hps_raw<- House_Pulse_Survey %>% 
+              select(Week =  WEEK, States = EST_ST, state_metropolitan = EST_MSA, Marital_Status = MS,Food_Sufficency = CURFOODSUF, Private_Health_insurance_status = PRIVHLTH, Public_Health_insurance_status = PUBHLTH, anxiety = ANXIOUS, worry = WORRY,depression = DOWN, no_interest = INTEREST, Incomeloss = WRKLOSS, Householdincome = INCOME, teach_cancelled = TEACH1, teach_distance_online = TEACH2, teach_distance_paper = TEACH3, teach_others = TEACH4, teach_no.change = TEACH5, teach_livecontact = SCHLHRS, teach_indivisualstudy = TSTDY_HRS, teach_studytime = TCH_HRS, K12_public = ENROLL1, K12_home = ENROLL2)
+
+length(which(new_hps_raw$K12_public==1 | new_hps_raw$K12_home==1)) 
+
+# filter by K-12 family
+
+new_hps <- subset(new_hps_raw, K12_public==1 | K12_home == 1)
+
+
+
+
+# filter by teaching form
+new_hps1 <- subset(new_hps, teach_cancelled == 1| teach_distance_online == 1| teach_distance_paper == 1| teach_others == 1| teach_no.change == 1)
+
+
+#change state and metro into binary variable
+new_hps1$state_metropolitan <- ifelse(is.na(new_hps1$state_metropolitan),"metropolitan", "state")
+
+# Policy in each state
+
+State_policy <- read_csv("~/Desktop/COVID-19 US state policy database (CUSP) - Unemployment Insurance.csv")
+
+New_State_Policy <- State_policy %>% select( States = `State FIPS Code`, UI_quarantined = `Expanded eligibility of unemployment insurance to anyone who is quarantined and/or taking care of someone who is quarantined`, UI_highrisk = `Expanded eligibility for UI to high-risk individuals in preventative quarantine`)
+
+New_State_Policy$States[New_State_Policy$States =="1"]<-"01"
+New_State_Policy$States[New_State_Policy$States =="2"]<-"02"
+New_State_Policy$States[New_State_Policy$States =="4"]<-"04"
+New_State_Policy$States[New_State_Policy$States =="5"]<-"05"
+New_State_Policy$States[New_State_Policy$States =="6"]<-"06"
+New_State_Policy$States[New_State_Policy$States =="8"]<-"08"
+New_State_Policy$States[New_State_Policy$States =="9"]<-"09"
+
+# merge dataset and other filterings
+
+new_hps2 <-merge(x=New_State_Policy,y=new_hps1,by="States",all.x=TRUE)
+
+#delete seen but not answered samples
+new_hps3 <- na_if(new_hps2,-88)
+#change the -99 into 0.
+new_hps3$teach_cancelled[new_hps3$teach_cancelled == -99] <- 0
+new_hps3$teach_distance_online[new_hps3$teach_distance_online == -99] <- 0
+new_hps3$teach_distance_paper[new_hps3$teach_distance_paper == -99] <- 0
+new_hps3$teach_others[new_hps3$teach_others == -99] <- 0
+new_hps3$teach_no.change[new_hps3$teach_no.change == -99] <- 0
+#change other -88 (not meaningful) into NA 
+new_hps4 <- na_if(new_hps3,-99)
+
+#whether has health insurance
+length(which(new_hps4$Private_Health_insurance_status==2 & new_hps4$Public_Health_insurance_status==2)) 
+#there are 1662 missing value for health insurance status , 15576 do not have health insurance
+
+new_hps4$Health_insurance <- ifelse(new_hps4$Private_Health_insurance_status == 3 & new_hps4$Public_Health_insurance_status == 3,yes = NA , 
+                                    no = ifelse(new_hps4$Private_Health_insurance_status == 2 & new_hps4$Public_Health_insurance_status == 2, 
+                                                yes = 0, no = 1) )
+
+new_hps4 <- new_hps4[!is.na(new_hps4$Health_insurance),]
+new_hps4 <- new_hps4[!is.na(new_hps4$teach_studytime),]
+new_hps4 <- new_hps4[!is.na(new_hps4$Marital_Status),]
+new_hps4 <- new_hps4[!is.na(new_hps4$Food_Sufficency),]
+new_hps4 <- new_hps4[!is.na(new_hps4$anxiety),]
+new_hps4 <- new_hps4[!is.na(new_hps4$worry),]
+new_hps4 <- new_hps4[!is.na(new_hps4$depression),]
+new_hps4 <- new_hps4[!is.na(new_hps4$no_interest),]
+new_hps4 <- new_hps4[!is.na(new_hps4$Incomeloss),]
+new_hps4 <- new_hps4[!is.na(new_hps4$Householdincome),]
+new_hps4 <- new_hps4[!is.na(new_hps4$teach_livecontact),]
+new_hps4 <- new_hps4[!is.na(new_hps4$teach_indivisualstudy),]
+new_hps4 <- new_hps4[,-c(24,25)]
+map(new_hps4, ~sum(is.na(.)))
+
+
+write_csv(new_hps4, "/Users/jiayigao/Desktop/dataset/ProcessedData/new_hps.csv")
+```
+
+see the numbers of missing value
+
+
+
+Basic checks and tests for the dataset
+```{r}
+
+new_hps4 <- read_csv("new_hps4.csv")
+names <- c(1:21,23,24)
+new_hps4[,names] <- lapply(new_hps4[,names] , factor)
+
+new_hps4 <- subset(new_hps4, teach_indivisualstudy<15 )
+
+
+bar_x <- c(6:16,22:24)
+
+for (i in bar_x) {
+  hist(new_hps4[,i], main = i)
+}
+
+boxplot(new_hps4$teach_indivisualstudy)
+hist(new_hps4$teach_indivisualstudy)
+length(which(new_hps4$teach_indivisualstudy == 0)) 
+
+# find connection between two variables
+
+model_all <- lm(teach_indivisualstudy~.,data = new_hps4)
+summary(model_all)
+
+
+
+```
+
+separate dataset
+
+```{r}
+# preparing training and test datasets
+	set.seed(1000)
+
+
+
+new_hps_random <- new_hps4[sample(nrow(new_hps4), 10000),]
+
+ames_split <- initial_split(new_hps_random, prop = 0.75)
+
+hps_train = training(ames_split)
+hps_test = testing(ames_split)
+
+
+fit_split <- function(formula, model, split, ...) {
+  wf <- workflows::add_model(workflows::add_formula(workflows::workflow(), formula, blueprint = hardhat::default_formula_blueprint(indicators = FALSE, allow_novel_levels = TRUE)), model)
+  tune::last_fit(wf, split, ...)
+}
+
+
+```
+
+
+knn try
+```{r}
+
+new_hps_binary_train <- new_hps_train %>% 
+                            select(teach_cancelled = teach_cancelled, 
+                                   teach_distance_online = teach_distance_online, 
+                                   teach_distance_paper = teach_distance_paper,
+                                   teach_others = teach_others,
+                                   teach_no.change = teach_no.change)
+new_hps_binary_test <- new_hps_test %>% 
+                            select(teach_cancelled = teach_cancelled, 
+                                   teach_distance_online = teach_distance_online, 
+                                   teach_distance_paper = teach_distance_paper,
+                                   teach_others = teach_others,
+                                    teach_no.change = teach_no.change)
+new_hps_binary_train_label <- new_hps_binary_train[,1]
+
+# write_csv(new_hps_binary_train, "/Users/jiayigao/Desktop/dataset/new_hps_binary_train.csv")
+# write_csv(new_hps_binary_test, "/Users/jiayigao/Desktop/dataset/new_hps_binary_test.csv")
+
+new_hps_pred <- knn(train = new_hps_binary_train, test = new_hps_binary_test,
+cl = new_hps_binary_train_label, k=5)
+
+#notes: knn does not allow missing values
+
+
+# https://grf-labs.github.io/grf/
+
+
+
+```
+
+
+
+# Decision tree C50 try
+```{r}
+# hps_train$teach_indivisualstudy<-as.factor(hps_train$teach_indivisualstudy)
+# hps_model <- C5.0(hps_train[-22], hps_train$teach_indivisualstudy)
+# 
+# 
+# summary(hps_model)
+# 
+# # make a prediction
+# new_hps_pred <- predict(hps_model, new_hps_test)
+# 
+# CrossTable(new_hps_test$teach_indivisualstudy, new_hps_pred,
+#              prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE,
+#              dnn = c('actual default', 'predicted default'))
+
+hps_train$equal <- ifelse(hps_train$teach_indivisualstudy < 5, "1","0")
+hps_train$equal <- as.factor(hps_train$equal)
+#home income
+output.tree_1 <- ctree( equal ~ Incomeloss + Householdincome + Food_Sufficency + anxiety + worry + depression + no_interest + Health_insurance + teach_cancelled + teach_distance_online + teach_distance_paper + teach_others + teach_no.change,  
+  data = hps_train)
+
+#health status
+output.tree_2 <- ctree( teach_indivisualstudy ~ anxiety + worry + depression + no_interest + Health_insurance,  
+  data = hps_train)
+
+#study form
+output.tree_3 <- ctree( teach_indivisualstudy ~ teach_cancelled + teach_distance_online + teach_distance_paper + teach_others + teach_no.change,data = hps_train)
+
+
+plot(output.tree_1)
+plot(output.tree_2)
+plot(output.tree_3)
+
+
+```
+
+
+
+Random forest
+
+```{r}
+
+set.seed(421)
+# Training using ‘random forest’ algorithm
+
+# rf <- randomForest(
+#   teach_studytime ~ .,
+#   data=hps_train
+# )
+#summary(hps_train$teach_indivisualstudy)
+
+hps_train$equal <- ifelse(hps_train$teach_indivisualstudy < 5, "1","0")
+hps_train$teach_studytime <- as.factor(hps_train$teach_studytime)
+
+
+model <- train(teach_indivisualstudy ~ Incomeloss,
+               data = hps_train,
+               method="rf", 
+               metric = "Accuracy",
+               trControl=trainControl(method="cv", number=5)) 
+
+
+model1 <- train(teach_indivisualstudy ~ .,
+               data = hps_train,
+               method="rf", 
+               metric="RMSE",
+               trControl=trainControl(method="cv", number=5)) 
+
+model1
+
+
+
+```
+
+```{r}
+set.seed(42)
+
+# default RF model
+m1 <- randomForest(
+  formula = teach_indivisualstudy ~ .,
+  data    = hps_train,
+   proximity=TRUE
+)
+
+plot(m1)
+
+# number of trees with lowest MSE
+which.min(m1$mse)
+
+# RMSE of this optimal random forest
+sqrt(m1$mse[which.min(m1$mse)])
+
+
+# create training and validation data 
+set.seed(123)
+valid_split <- initial_split(hps_train, .8)
+
+# training data
+ames_train_v2 <- analysis(valid_split)
+
+# validation data
+ames_valid <- assessment(valid_split)
+x_test <- ames_valid[setdiff(names(ames_valid), "teach_indivisualstudy")]
+y_test <- ames_valid$teach_indivisualstudy
+
+rf_oob_comp <- randomForest(
+  formula = teach_indivisualstudy ~ .,
+  data    = ames_train_v2,
+  xtest   = x_test,
+  ytest   = y_test
+)
+
+# extract OOB & validation errors
+oob <- sqrt(rf_oob_comp$mse)
+validation <- sqrt(rf_oob_comp$test$mse)
+
+# compare error rates
+tibble::tibble(
+  `Out of Bag Error` = oob,
+  `Test error` = validation,
+  ntrees = 1:rf_oob_comp$ntree
+) %>%
+  gather(Metric, RMSE, -ntrees) %>%
+  ggplot(aes(ntrees, RMSE, color = Metric)) +
+  geom_line() +
+  scale_y_continuous(labels = scales::dollar) +
+  xlab("Number of trees")
+```
+

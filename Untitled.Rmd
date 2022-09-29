@@ -1,0 +1,239 @@
+---
+title: "Honor  Thesis Model selection"
+author: "Jiayi Gao"
+date: "11/17/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(plyr)
+library(readr)
+library(tidyverse)
+library(PropCIs)
+library(car)
+library(knitr)
+library(mcprofile)
+library(ggplot2)
+library(multcomp)
+library(mcprofile)
+library(dplyr)
+```
+
+
+Prepare dataset
+```{r cars}
+new_hps4 <- read_csv("/Users/jiayigao/Desktop/dataset/ProcessedData/new_hps.csv")
+
+# names <- c(1:21,23,24)
+# new_hps4[,names] <- lapply(new_hps4[,names] , factor)
+
+
+
+summary(new_hps4)
+boxplot(new_hps4$teach_indivisualstudy)
+ggplot(new_hps4)+
+  geom_boxplot(aes(teach_indivisualstudy))+
+  ggtitle("Boxplot of individual study time")+
+  coord_flip()+
+  theme(plot.title = element_text( size = 12, face = "bold",hjust = 0.5))
+
+
+new_hps4 <- subset(new_hps4, teach_indivisualstudy<28)
+
+
+ggplot(new_hps4, aes(teach_indivisualstudy))+
+  geom_histogram()
+  
+
+sd(new_hps4$teach_indivisualstudy)
+
+sd_of_studytime <-aggregate(new_hps4$teach_indivisualstudy, by=list(new_hps4$States), FUN=sd)
+
+sd_of_studytime %>% 
+  arrange(desc(x))
+
+median(new_hps4$teach_indivisualstudy)
+quantile(new_hps4$teach_indivisualstudy)
+
+mean(new_hps4$teach_indivisualstudy)
+length(which(new_hps4$teach_indivisualstudy == 0)) 
+
+new_hps4$whether_study <- ifelse(new_hps4$teach_indivisualstudy == 0 ,0,1)
+
+write_csv(new_hps4, "/Users/jiayigao/Desktop/dataset/new_hps4.csv")
+
+#4 level
+new_hps4.2 <- read_csv("/Users/jiayigao/Desktop/dataset/ProcessedData/new_hps.csv")
+new_hps4.2 <- subset(new_hps4.2, teach_indivisualstudy<28)
+new_hps4.2$whether_study <- ifelse(new_hps4.2$teach_indivisualstudy <= 7 ,1,
+                                 ifelse(new_hps4.2$teach_indivisualstudy <= 14,2,
+                                        ifelse(new_hps4.2$teach_indivisualstudy <= 21,3,
+                                                ifelse(new_hps4.2$teach_indivisualstudy <= 28,4,0))))
+
+write_csv(new_hps4.2, "/Users/jiayigao/Desktop/dataset/new_hps5.csv")
+
+
+
+# 4 level
+new_hps4.3 <- read_csv("/Users/jiayigao/Desktop/dataset/ProcessedData/new_hps.csv")
+new_hps4.3 <- subset(new_hps4.3, teach_indivisualstudy<28)
+new_hps4.3$whether_study <- ifelse(new_hps4.3$teach_indivisualstudy <= 3.5 ,1,
+                                 ifelse(new_hps4.3$teach_indivisualstudy <= 7,2,
+                                        ifelse(new_hps4.3$teach_indivisualstudy <= 10.5,3,
+                                                ifelse(new_hps4.3$teach_indivisualstudy <= 14,4,
+                                                       ifelse(new_hps4.3$teach_indivisualstudy <= 17.5,5,
+                                                              ifelse(new_hps4.3$teach_indivisualstudy <= 21,6,
+                                                                     ifelse(new_hps4.3$teach_indivisualstudy <= 24.5,7,
+                                                                            ifelse(new_hps4.3$teach_indivisualstudy <= 28,8,0))))))))
+
+write_csv(new_hps4.3, "/Users/jiayigao/Desktop/dataset/new_hps6.csv")
+
+# under 7 3 levels
+new_hps4.4 <- read_csv("/Users/jiayigao/Desktop/dataset/ProcessedData/new_hps.csv")
+new_hps4.4 <- subset(new_hps4.4, teach_indivisualstudy<7)
+
+new_hps4.4$whether_study <- ifelse(new_hps4.4$teach_indivisualstudy == 0 ,0,
+                                    ifelse(new_hps4.4$teach_indivisualstudy <= 3.5,1,
+                                      ifelse(new_hps4.4$teach_indivisualstudy <= 7,2)))
+
+write_csv(new_hps4.4, "/Users/jiayigao/Desktop/dataset/new_hps7.csv")
+
+
+#under7 2 levels
+new_hps4.5 <- read_csv("/Users/jiayigao/Desktop/dataset/ProcessedData/new_hps.csv")
+new_hps4.5 <- subset(new_hps4.5, teach_indivisualstudy<7)
+
+new_hps4.5$whether_study <- ifelse(new_hps4.5$teach_indivisualstudy == 0 ,0,1)
+
+length(which(new_hps4.5$whether_study == 1)) 
+write_csv(new_hps4.5, "/Users/jiayigao/Desktop/dataset/new_hps8.csv")
+
+
+
+# quntile
+new_hps4.6 <- read_csv("/Users/jiayigao/Desktop/dataset/ProcessedData/new_hps.csv")
+new_hps4.6 <- subset(new_hps4.6, teach_indivisualstudy<28)
+
+new_hps4.6$whether_study <- ifelse(new_hps4.6$teach_indivisualstudy <= 2.5 ,1,
+                                    ifelse(new_hps4.6$teach_indivisualstudy <= 5,2,
+                                      ifelse(new_hps4.6$teach_indivisualstudy <= 10,3,
+                                             ifelse(new_hps4.6$teach_indivisualstudy <= 27.5,4,0))))
+                                   
+    
+write_csv(new_hps4.6, "/Users/jiayigao/Desktop/dataset/new_hps8.csv")
+
+# mean
+new_hps4.7 <- read_csv("/Users/jiayigao/Desktop/dataset/ProcessedData/new_hps.csv")
+new_hps4.7 <- subset(new_hps4.7, teach_indivisualstudy<28)
+
+new_hps4.7$whether_study <- ifelse(new_hps4.7$teach_indivisualstudy <= 7 ,0,1)
+
+length(which(new_hps4.7$whether_study == 0)) 
+
+write_csv(new_hps4.7, "/Users/jiayigao/Desktop/dataset/new_hps9.csv")
+
+
+# above 7
+new_hps4.8 <- read_csv("/Users/jiayigao/Desktop/dataset/ProcessedData/new_hps.csv")
+
+new_hps4.8 <- subset(new_hps4.8, teach_indivisualstudy >=7)
+new_hps4.8 <- subset(new_hps4.8, teach_indivisualstudy <=28)
+
+quantile(new_hps4.8$teach_indivisualstudy)
+
+new_hps4.8$whether_study <- ifelse(new_hps4.8$teach_indivisualstudy <= 10 ,1,
+                                 ifelse(new_hps4.8$teach_indivisualstudy <= 12,2,
+                                        ifelse(new_hps4.8$teach_indivisualstudy <= 20,3,
+                                                ifelse(new_hps4.8$teach_indivisualstudy <= 28,4,4))))
+
+write_csv(new_hps4.8, "/Users/jiayigao/Desktop/dataset/new_hps10.csv")
+
+
+
+```
+
+
+
+```{r}
+new_hps3 <- read_csv("new_hps.csv")
+names <- c(1:21,23,24)
+
+
+new_hps3[,names] <- lapply(new_hps3[,names] , factor)
+
+new_hps3 <- subset(new_hps3, teach_indivisualstudy<28 )
+
+new_hps3$whether_study <- ifelse(new_hps3$teach_indivisualstudy <= 3.5 ,0,ifelse(new_hps3$teach_indivisualstudy <= 7, 1,2))
+
+new_hps3$whether_study <- as.factor(new_hps3$whether_study)
+
+
+
+
+write_csv(new_hps3, "/Users/jiayigao/Desktop/dataset/new_hps3.csv")
+```
+
+
+
+```{r}
+new_hps2 <- read_csv("new_hps.csv")
+names <- c(1:21,23,24)
+
+
+new_hps2[,names] <- lapply(new_hps2[,names] , factor)
+
+new_hps2 <- subset(new_hps2, teach_indivisualstudy<10 )
+median(new_hps2$teach_indivisualstudy)
+
+new_hps2$whether_study <- ifelse(new_hps2$teach_indivisualstudy <= 3 ,0,1)
+new_hps2$whether_study <- as.factor(new_hps2$whether_study)
+plot(x=new_hps2$Week, y = new_hps2$whether_study)
+
+
+write_csv(new_hps2, "/Users/jiayigao/Desktop/dataset/new_hps2.csv")
+```
+
+
+
+split data set
+```{r}
+	set.seed(1000)
+
+
+
+# new_hps_random <- new_hps4[sample(nrow(new_hps4), 10000),]
+
+ames_split <- initial_split(new_hps4, prop = 0.75)
+
+hps_train = training(ames_split)
+hps_test = testing(ames_split)
+
+
+```
+
+
+
+Regression
+```{r}
+
+model.1 <- lm(teach_indivisualstudy ~ Householdincome+teach_studytime+teach_livecontact+anxiety+worry+depression+no_interest+Food_Sufficency+Public_Health_insurance_status, data = new_hps4)
+summary(model.1)
+
+prediction <- predict(data = hps_test, model.1)
+
+mean(prediction)
+mean(hps_test$teach_indivisualstudy)
+
+
+```
+
+
+logistic regression
+```{r}
+model.2 <- glm(whether_study ~ Householdincome, data = new_hps4, family = binomial(link = logit))
+
+summary(model.2)
+
+```
+
